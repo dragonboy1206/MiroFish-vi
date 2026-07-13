@@ -153,8 +153,14 @@
             </div>
           </div>
 
+          <!-- Error State -->
+          <div v-if="buildProgress?.error || projectData?.error" class="error-state">
+            <span class="error-icon">⚠️</span>
+            <span class="error-text">{{ buildProgress?.error || projectData?.error }}</span>
+          </div>
+
           <!-- Retry Button for Graph Build -->
-          <div v-if="currentPhase > 1" class="retry-section">
+          <div v-if="currentPhase >= 1" class="retry-section">
             <button 
               class="retry-btn" 
               :disabled="retryingGraph"
@@ -748,6 +754,30 @@ watch(() => props.systemLogs.length, () => {
   width: 12px;
   height: 12px;
   border-width: 1.5px;
+}
+
+/* Error State */
+.error-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 6px;
+}
+
+.error-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.error-text {
+  font-size: 12px;
+  color: #DC2626;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 /* System Logs */

@@ -187,6 +187,7 @@ const handleRetryOntology = async () => {
   addLog('Retrying ontology generation...')
   currentPhase.value = 0
   ontologyProgress.value = { message: 'Regenerating ontology...' }
+  error.value = '' // Clear previous error
   
   // Poll for updates
   const checkStatus = setInterval(async () => {
@@ -208,12 +209,16 @@ const handleRetryOntology = async () => {
       }
     }
   }, 2000)
+  
+  // Stop polling after 5 minutes
+  setTimeout(() => clearInterval(checkStatus), 300000)
 }
 
 const handleRetryGraph = async () => {
   addLog('Retrying graph build...')
   currentPhase.value = 1
   buildProgress.value = { progress: 0, message: 'Rebuilding graph...' }
+  error.value = '' // Clear previous error
   
   // Start polling for task status
   if (currentProjectId.value) {

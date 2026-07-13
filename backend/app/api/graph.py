@@ -765,11 +765,25 @@ def retry_graph_build(project_id: str):
         # 重新构建图谱
         logger.info(f"重新构建图谱: project_id={project_id}")
         
+        # 获取配置
+        graph_name = f"mirofish_{project_id}"
+        chunk_size = project.chunk_size or Config.DEFAULT_CHUNK_SIZE
+        chunk_overlap = project.chunk_overlap or Config.DEFAULT_CHUNK_OVERLAP
+        
+        # 获取提取的文本
+        extracted_text = ProjectManager.get_extracted_text(project_id)
+        if not extracted_text:
+            return jsonify({
+                "success": False,
+                "error": t('api.textNotFound')
+            }), 400
+        
         # Capture locale for background thread
         current_locale = get_locale()
         
         def run_build():
             set_locale(current_locale)
+            build_logger = get_logger('mirofish.build')
             try:
                 # 创建任务
                 task_manager = TaskManager()
@@ -783,39 +797,87 @@ def retry_graph_build(project_id: str):
                 project.status = ProjectStatus.GRAPH_BUILDING
                 ProjectManager.save_project(project)
                 
-                # 构建图谱
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
-                
-                # 进度回调
-                def progress_callback(progress, message):
-                    task_manager.update_task(task_id, progress=progress, message=message)
-                
-                # 读取文本
-                extracted_text = ProjectManager.get_extracted_text(project_id)
-                
-                # 构建
-                graph_info = builder.build_graph(
-                    text=extracted_text,
-                    ontology=project.ontology,
-                    graph_name=f"mirofish_{project_id}",
-                    progress_callback=progress_callback
+                build_logger.info(f"[{task_id}] 开始重新构建图谱...")
+                task_manager.update_task(
+                    task_id, 
+                    status=TaskStatus.PROCESSING,
+                    message=t('progress.initGraphService')
                 )
                 
+                # 创建图谱构建服务
+                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                
+                # 分块
+                task_manager.update_task(
+                    task_id,
+                    message=t('progress.textChunking'),
+                    progress=5
+                )
+                chunks = TextProcessor.split_text(
+                    extracted_text, 
+                    chunk_size=chunk_size, 
+                    overlap=chunk_overlap
+                )
+                total_chunks = len(chunks)
+                
+                # 创建图谱
+                task_manager.update_task(
+                    task_id,
+                    message=t('progress.creatingZepGraph'),
+                    progress=10
+                )
+                graph_id = builder.create_graph(graph_name)
+                
+                # 设置本体
+                task_manager.update_task(
+                    task_id,
+                    message=t('progress.settingOntology'),
+                    progress=15
+                )
+                builder.set_ontology(graph_id, project.ontology)
+                
+                # 分批发送
+                task_manager.update_task(
+                    task_id,
+                    message=t('progress.addingChunks', count=total_chunks),
+                    progress=20
+                )
+                episodes = builder.add_episodes_batch(
+                    graph_id, 
+                    chunks, 
+                    batch_size=3
+                )
+                
+                # 等待处理
+                task_manager.update_task(
+                    task_id,
+                    message=t('progress.waitingZepProcess'),
+                    progress=60
+                )
+                
+                # 获取图谱信息
+                task_manager.update_task(
+                    task_id,
+                    message=t('progress.fetchingGraphData'),
+                    progress=90
+                )
+                graph_info = builder.get_graph_info(graph_id)
+                
                 # 保存结果
-                project.graph_id = graph_info.graph_id
+                project.graph_id = graph_id
                 project.status = ProjectStatus.GRAPH_COMPLETED
                 ProjectManager.save_project(project)
                 
                 task_manager.complete_task(task_id, result={
-                    "graph_id": graph_info.graph_id,
+                    "graph_id": graph_id,
                     "node_count": graph_info.node_count,
                     "edge_count": graph_info.edge_count
                 })
                 
-                logger.info(f"图谱重新构建完成: graph_id={graph_info.graph_id}")
+                build_logger.info(f"图谱重新构建完成: graph_id={graph_id}")
                 
             except Exception as e:
-                logger.error(f"图谱重新构建失败: {e}")
+                build_logger.error(f"图谱重新构建失败: {e}")
                 project.error = str(e)
                 project.status = ProjectStatus.FAILED
                 ProjectManager.save_project(project)
