@@ -161,9 +161,19 @@ class OasisProfileGenerator:
     ]
     
     # 常见国家列表
-    COUNTRIES = [
+    COUNTRIES_EN = [
         "China", "US", "UK", "Japan", "Germany", "France", 
         "Canada", "Australia", "Brazil", "India", "South Korea"
+    ]
+    
+    COUNTRIES_VI = [
+        "Trung Quốc", "Mỹ", "Anh", "Nhật Bản", "Đức", "Pháp",
+        "Canada", "Úc", "Brazil", "Ấn Độ", "Hàn Quốc"
+    ]
+    
+    COUNTRIES_ZH = [
+        "中国", "美国", "英国", "日本", "德国", "法国",
+        "加拿大", "澳大利亚", "巴西", "印度", "韩国"
     ]
     
     # 个人类型实体（需要生成具体人设）
@@ -177,6 +187,17 @@ class OasisProfileGenerator:
         "university", "governmentagency", "organization", "ngo", 
         "mediaoutlet", "company", "institution", "group", "community"
     ]
+    
+    @property
+    def COUNTRIES(self) -> List[str]:
+        """获取当前语言对应的国家列表"""
+        locale = get_locale()
+        if locale == 'vi':
+            return self.COUNTRIES_VI
+        elif locale == 'zh':
+            return self.COUNTRIES_ZH
+        else:
+            return self.COUNTRIES_EN
     
     def __init__(
         self, 
@@ -671,7 +692,13 @@ class OasisProfileGenerator:
     
     def _get_system_prompt(self, is_individual: bool) -> str:
         """获取系统提示词"""
-        base_prompt = "你是社交媒体用户画像生成专家。生成详细、真实的人设用于舆论模拟,最大程度还原已有现实情况。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。"
+        locale = get_locale()
+        
+        if locale == 'vi':
+            base_prompt = "Bạn là chuyên gia tạo hồ sơ người dùng mạng xã hội. Tạo hồ sơ chi tiết, chân thực用于 mô phỏng dư luận,最大程度还原已有现实情况. 必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符."
+        else:
+            base_prompt = "你是社交媒体用户画像生成专家。生成详细、真实的人设用于舆论模拟,最大程度还原已有现实情况。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。"
+        
         # Add language instruction at the beginning for stronger effect
         lang_instruction = get_language_instruction()
         return f"{lang_instruction}\n\n{base_prompt}\n\n{lang_instruction}"
@@ -689,7 +716,46 @@ class OasisProfileGenerator:
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
         
-        return f"""为实体生成详细的社交媒体用户人设,最大程度还原已有现实情况。
+        locale = get_locale()
+        
+        if locale == 'vi':
+            return f"""Tạo hồ sơ chi tiết cho thực thể trên mạng xã hội,最大程度还原已有现实情况.
+
+Tên thực thể: {entity_name}
+Loại thực thể: {entity_type}
+Tóm tắt thực thể: {entity_summary}
+Thuộc tính thực thể: {attrs_str}
+
+Thông tin ngữ cảnh:
+{context_str}
+
+Vui lòng tạo JSON với các trường sau:
+
+1. bio: Tiểu sử ngắn trên mạng xã hội, 200 từ
+2. persona: Mô tả hồ sơ chi tiết (văn bản thuần túy 2000 từ), cần bao gồm:
+   - Thông tin cơ bản (tuổi, nghề nghiệp, trình độ học vấn, địa điểm)
+   - Lý lịch nhân vật (kinh nghiệm quan trọng, liên hệ với sự kiện, quan hệ xã hội)
+   - Đặc điểm tính cách (loại MBTI, tính cách cốt lõi, cách biểu lộ cảm xúc)
+   - Hành vi trên mạng xã hội (tần suất đăng bài, sở thích nội dung, phong cách tương tác, đặc điểm ngôn ngữ)
+   - Lập trường quan điểm (thái độ đối với chủ đề, nội dung có thể khiến họ phẫn nộ/cảm động)
+   - Đặc điểm độc đáo (câu cửa miệng, kinh nghiệm đặc biệt, sở thích cá nhân)
+   - Ký ức cá nhân (phần quan trọng của hồ sơ, giới thiệu mối liên hệ của cá nhân này với sự kiện,以及 các hành vi và phản ứng đã có trong sự kiện)
+3. age: Số tuổi (phải là số nguyên)
+4. gender: Giới tính, phải là tiếng Anh: "male" hoặc "female"
+5. mbti: Loại MBTI (ví dụ INTJ, ENFP...)
+6. country: Quốc gia (sử dụng tiếng Việt, ví dụ "Việt Nam")
+7. profession: Nghề nghiệp
+8. interested_topics: Mảng các chủ đề quan tâm
+
+Quan trọng:
+- Tất cả giá trị trường phải là chuỗi hoặc số, không sử dụng ký tự xuống dòng
+- persona phải là một đoạn mô tả liền mạch
+- {get_language_instruction()} (trường gender phải dùng tiếng Anh male/female)
+- Nội dung phải nhất quán với thông tin thực thể
+- age phải là số nguyên hợp lệ, gender phải là "male" hoặc "female"
+"""
+        else:
+            return f"""为实体生成详细的社交媒体用户人设,最大程度还原已有现实情况。
 
 实体名称: {entity_name}
 实体类型: {entity_type}
@@ -738,7 +804,45 @@ class OasisProfileGenerator:
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
         
-        return f"""为机构/群体实体生成详细的社交媒体账号设定,最大程度还原已有现实情况。
+        locale = get_locale()
+        
+        if locale == 'vi':
+            return f"""Tạo cấu hình tài khoản mạng xã hội chi tiết cho thực thể tổ chức/nhóm,最大程度还原已有现实情况.
+
+Tên thực thể: {entity_name}
+Loại thực thể: {entity_type}
+Tóm tắt thực thể: {entity_summary}
+Thuộc tính thực thể: {attrs_str}
+
+Thông tin ngữ cảnh:
+{context_str}
+
+Vui lòng tạo JSON với các trường sau:
+
+1. bio: Tiểu sử tài khoản chính thức, 200 từ, chuyên nghiệp và phù hợp
+2. persona: Mô tả cấu hình tài khoản chi tiết (văn bản thuần túy 2000 từ), cần bao gồm:
+   - Thông tin cơ bản về tổ chức (tên chính thức, tính chất tổ chức,背景 thành lập, chức năng chính)
+   - Định vị tài khoản (loại tài khoản, đối tượng mục tiêu, chức năng cốt lõi)
+   - Phong cách phát biểu (đặc điểm ngôn ngữ, cách表达常用, chủ đề禁忌)
+   - Đặc điểm nội dung đăng tải (loại nội dung, tần suất đăng, khung giờ hoạt động)
+   - Lập trường thái độ (lập trường chính thức về chủ đề核心, cách xử lý khi面对 tranh cãi)
+   - Giải thích đặc biệt (chân dung群体 đại diện, thói quen运营)
+   - Ký ức tổ chức (phần quan trọng của hồ sơ tổ chức, giới thiệu mối liên hệ của tổ chức này với sự kiện,以及 các hành vi và phản ứng đã có trong sự kiện)
+3. age: Điền cố định 30 (tuổi ảo của tài khoản tổ chức)
+4. gender: Điền cố định "other" (tổ chức sử dụng other表示非个人)
+5. mbti: Loại MBTI,用于 mô tả phong cách tài khoản, ví dụ ISTJ代表严谨保守
+6. country: Quốc gia (sử dụng tiếng Việt, ví dụ "Việt Nam")
+7. profession: Mô tả chức năng tổ chức
+8. interested_topics: Mảng các lĩnh vực quan tâm
+
+Quan trọng:
+- Tất cả giá trị trường phải là chuỗi hoặc số, không允许 null
+- persona phải là một đoạn mô tả liền mạch, không sử dụng ký tự xuống dòng
+- {get_language_instruction()} (trường gender phải dùng tiếng Anh "other")
+- age phải là số nguyên 30, gender phải là chuỗi "other"
+- Tài khoản tổ chức phải符合 định vị身份"""
+        else:
+            return f"""为机构/群体实体生成详细的社交媒体账号设定,最大程度还原已有现实情况。
 
 实体名称: {entity_name}
 实体类型: {entity_type}
@@ -784,67 +888,128 @@ class OasisProfileGenerator:
         
         # 根据实体类型生成不同的人设
         entity_type_lower = entity_type.lower()
+        locale = get_locale()
         
         if entity_type_lower in ["student", "alumni"]:
-            return {
-                "bio": f"{entity_type} with interests in academics and social issues.",
-                "persona": f"{entity_name} is a {entity_type.lower()} who is actively engaged in academic and social discussions. They enjoy sharing perspectives and connecting with peers.",
-                "age": random.randint(18, 30),
-                "gender": random.choice(["male", "female"]),
-                "mbti": random.choice(self.MBTI_TYPES),
-                "country": random.choice(self.COUNTRIES),
-                "profession": "Student",
-                "interested_topics": ["Education", "Social Issues", "Technology"],
-            }
+            if locale == 'vi':
+                return {
+                    "bio": f"{entity_type} với sở thích về học thuật và các vấn đề xã hội.",
+                    "persona": f"{entity_name} là một {entity_type.lower()} tích cực tham gia thảo luận học thuật và xã hội. Họ thích chia sẻ quan điểm và kết nối với bạn bè.",
+                    "age": random.randint(18, 30),
+                    "gender": random.choice(["male", "female"]),
+                    "mbti": random.choice(self.MBTI_TYPES),
+                    "country": random.choice(self.COUNTRIES),
+                    "profession": "Sinh viên",
+                    "interested_topics": ["Giáo dục", "Vấn đề xã hội", "Công nghệ"],
+                }
+            else:
+                return {
+                    "bio": f"{entity_type} with interests in academics and social issues.",
+                    "persona": f"{entity_name} is a {entity_type.lower()} who is actively engaged in academic and social discussions. They enjoy sharing perspectives and connecting with peers.",
+                    "age": random.randint(18, 30),
+                    "gender": random.choice(["male", "female"]),
+                    "mbti": random.choice(self.MBTI_TYPES),
+                    "country": random.choice(self.COUNTRIES),
+                    "profession": "Student",
+                    "interested_topics": ["Education", "Social Issues", "Technology"],
+                }
         
         elif entity_type_lower in ["publicfigure", "expert", "faculty"]:
-            return {
-                "bio": f"Expert and thought leader in their field.",
-                "persona": f"{entity_name} is a recognized {entity_type.lower()} who shares insights and opinions on important matters. They are known for their expertise and influence in public discourse.",
-                "age": random.randint(35, 60),
-                "gender": random.choice(["male", "female"]),
-                "mbti": random.choice(["ENTJ", "INTJ", "ENTP", "INTP"]),
-                "country": random.choice(self.COUNTRIES),
-                "profession": entity_attributes.get("occupation", "Expert"),
-                "interested_topics": ["Politics", "Economics", "Culture & Society"],
-            }
+            if locale == 'vi':
+                return {
+                    "bio": f"Chuyên gia và người dẫn đầu tư tưởng trong lĩnh vực của họ.",
+                    "persona": f"{entity_name} là một {entity_type.lower()} được công nhận, chia sẻ thông tin chuyên sâu và quan điểm về các vấn đề quan trọng. Họ được biết đến với chuyên môn và ảnh hưởng trong diễn ngôn công cộng.",
+                    "age": random.randint(35, 60),
+                    "gender": random.choice(["male", "female"]),
+                    "mbti": random.choice(["ENTJ", "INTJ", "ENTP", "INTP"]),
+                    "country": random.choice(self.COUNTRIES),
+                    "profession": entity_attributes.get("occupation", "Chuyên gia"),
+                    "interested_topics": ["Chính trị", "Kinh tế", "Văn hóa & Xã hội"],
+                }
+            else:
+                return {
+                    "bio": f"Expert and thought leader in their field.",
+                    "persona": f"{entity_name} is a recognized {entity_type.lower()} who shares insights and opinions on important matters. They are known for their expertise and influence in public discourse.",
+                    "age": random.randint(35, 60),
+                    "gender": random.choice(["male", "female"]),
+                    "mbti": random.choice(["ENTJ", "INTJ", "ENTP", "INTP"]),
+                    "country": random.choice(self.COUNTRIES),
+                    "profession": entity_attributes.get("occupation", "Expert"),
+                    "interested_topics": ["Politics", "Economics", "Culture & Society"],
+                }
         
         elif entity_type_lower in ["mediaoutlet", "socialmediaplatform"]:
-            return {
-                "bio": f"Official account for {entity_name}. News and updates.",
-                "persona": f"{entity_name} is a media entity that reports news and facilitates public discourse. The account shares timely updates and engages with the audience on current events.",
-                "age": 30,  # 机构虚拟年龄
-                "gender": "other",  # 机构使用other
-                "mbti": "ISTJ",  # 机构风格：严谨保守
-                "country": "中国",
-                "profession": "Media",
-                "interested_topics": ["General News", "Current Events", "Public Affairs"],
-            }
+            if locale == 'vi':
+                return {
+                    "bio": f"Tài khoản chính thức của {entity_name}. Tin tức và cập nhật.",
+                    "persona": f"{entity_name} là một thực thể truyền thông đưa tin tức và thúc đẩy diễn ngôn công cộng. Tài khoản chia sẻ cập nhật kịp thời và tương tác với khán giả về các sự kiện thời sự.",
+                    "age": 30,
+                    "gender": "other",
+                    "mbti": "ISTJ",
+                    "country": "Việt Nam",
+                    "profession": "Truyền thông",
+                    "interested_topics": ["Tin tức chung", "Sự kiện thời sự", "Công cộng"],
+                }
+            else:
+                return {
+                    "bio": f"Official account for {entity_name}. News and updates.",
+                    "persona": f"{entity_name} is a media entity that reports news and facilitates public discourse. The account shares timely updates and engages with the audience on current events.",
+                    "age": 30,
+                    "gender": "other",
+                    "mbti": "ISTJ",
+                    "country": "中国",
+                    "profession": "Media",
+                    "interested_topics": ["General News", "Current Events", "Public Affairs"],
+                }
         
         elif entity_type_lower in ["university", "governmentagency", "ngo", "organization"]:
-            return {
-                "bio": f"Official account of {entity_name}.",
-                "persona": f"{entity_name} is an institutional entity that communicates official positions, announcements, and engages with stakeholders on relevant matters.",
-                "age": 30,  # 机构虚拟年龄
-                "gender": "other",  # 机构使用other
-                "mbti": "ISTJ",  # 机构风格：严谨保守
-                "country": "中国",
-                "profession": entity_type,
-                "interested_topics": ["Public Policy", "Community", "Official Announcements"],
-            }
+            if locale == 'vi':
+                return {
+                    "bio": f"Tài khoản chính thức của {entity_name}.",
+                    "persona": f"{entity_name} là một thực thể tổ chức truyền đạt lập trường chính thức, thông báo và tương tác với các bên liên quan về các vấn đề liên quan.",
+                    "age": 30,
+                    "gender": "other",
+                    "mbti": "ISTJ",
+                    "country": "Việt Nam",
+                    "profession": entity_type,
+                    "interested_topics": ["Chính sách công", "Cộng đồng", "Thông báo chính thức"],
+                }
+            else:
+                return {
+                    "bio": f"Official account of {entity_name}.",
+                    "persona": f"{entity_name} is an institutional entity that communicates official positions, announcements, and engages with stakeholders on relevant matters.",
+                    "age": 30,
+                    "gender": "other",
+                    "mbti": "ISTJ",
+                    "country": "中国",
+                    "profession": entity_type,
+                    "interested_topics": ["Public Policy", "Community", "Official Announcements"],
+                }
         
         else:
             # 默认人设
-            return {
-                "bio": entity_summary[:150] if entity_summary else f"{entity_type}: {entity_name}",
-                "persona": entity_summary or f"{entity_name} is a {entity_type.lower()} participating in social discussions.",
-                "age": random.randint(25, 50),
-                "gender": random.choice(["male", "female"]),
-                "mbti": random.choice(self.MBTI_TYPES),
-                "country": random.choice(self.COUNTRIES),
-                "profession": entity_type,
-                "interested_topics": ["General", "Social Issues"],
-            }
+            if locale == 'vi':
+                return {
+                    "bio": entity_summary[:150] if entity_summary else f"{entity_type}: {entity_name}",
+                    "persona": entity_summary or f"{entity_name} là một {entity_type.lower()} tham gia thảo luận xã hội.",
+                    "age": random.randint(25, 50),
+                    "gender": random.choice(["male", "female"]),
+                    "mbti": random.choice(self.MBTI_TYPES),
+                    "country": random.choice(self.COUNTRIES),
+                    "profession": entity_type,
+                    "interested_topics": ["Tổng quan", "Vấn đề xã hội"],
+                }
+            else:
+                return {
+                    "bio": entity_summary[:150] if entity_summary else f"{entity_type}: {entity_name}",
+                    "persona": entity_summary or f"{entity_name} is a {entity_type.lower()} participating in social discussions.",
+                    "age": random.randint(25, 50),
+                    "gender": random.choice(["male", "female"]),
+                    "mbti": random.choice(self.MBTI_TYPES),
+                    "country": random.choice(self.COUNTRIES),
+                    "profession": entity_type,
+                    "interested_topics": ["General", "Social Issues"],
+                }
     
     def set_graph_id(self, graph_id: str):
         """设置图谱ID用于Zep检索"""
