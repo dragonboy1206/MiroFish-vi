@@ -7,6 +7,10 @@
     "label": "English",
     "llmInstruction": "Please respond in English."
   },
+  "vi": {
+    "label": "Tiếng Việt",
+    "llmInstruction": "BẮT BUỘC: Toàn bộ phản hồi PHẢI bằng tiếng Việt. Dù prompt hệ thống có thể hiển thị bằng ngôn ngữ khác, bạn PHẢI trả lời hoàn toàn bằng tiếng Việt. Cụ thể: (1) Tất cả phân tích, báo cáo, mô tả, giải thích phải bằng tiếng Việt; (2) Khi trích dẫn nội dung từ công cụ trả về bằng ngôn ngữ khác, BẮT BUỘC dịch sang tiếng Việt trước khi đưa vào báo cáo; (3) Chỉ giữ nguyên thuật ngữ kỹ thuật tiếng Anh khi bắt buộc (tên entity type dạng PascalCase, edge type dạng UPPER_SNAKE_CASE, tên công cụ như insight_forge/panorama_search); (4) JSON field names giữ nguyên tiếng Anh nhưng giá trị text phải bằng tiếng Việt."
+  },
   "es": {
     "label": "Español",
     "llmInstruction": "Por favor, responde en español."

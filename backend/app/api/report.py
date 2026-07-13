@@ -1018,3 +1018,264 @@ def get_graph_statistics_tool():
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+# ============== Retry Endpoints ==============
+
+@report_bp.route('/retry/<simulation_id>', methods=['POST'])
+def retry_report_generation(simulation_id: str):
+    """
+    重新生成报告
+    
+    请求（JSON）：
+        {
+            "force_regenerate": true  // 强制重新生成
+        }
+    
+    返回：
+        {
+            "success": true,
+            "data": {
+                "simulation_id": "sim_xxxx",
+                "report_id": "report_xxxx",
+                "task_id": "task_xxxx"
+            }
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        force_regenerate = data.get('force_regenerate', True)
+        
+        # 获取模拟信息
+        manager = SimulationManager()
+        state = manager.get_simulation(simulation_id)
+        
+        if not state:
+            return jsonify({
+                "success": False,
+                "error": t('api.simulationNotFound', id=simulation_id)
+            }), 404
+        
+        # 获取项目信息
+        project = ProjectManager.get_project(state.project_id)
+        if not project:
+            return jsonify({
+                "success": False,
+                "error": t('api.projectNotFound', id=state.project_id)
+            }), 404
+        
+        graph_id = state.graph_id or project.graph_id
+        if not graph_id:
+            return jsonify({
+                "success": False,
+                "error": t('api.missingGraphIdEnsure')
+            }), 400
+        
+        simulation_requirement = project.simulation_requirement
+        if not simulation_requirement:
+            return jsonify({
+                "success": False,
+                "error": t('api.missingSimRequirement')
+            }), 400
+        
+        # 删除旧报告（如果有）
+        if force_regenerate:
+            existing_report = ReportManager.get_report_by_simulation(simulation_id)
+            if existing_report:
+                ReportManager.delete_report(existing_report.report_id)
+                logger.info(f"已删除旧报告: {existing_report.report_id}")
+        
+        # 提前生成 report_id
+        import uuid
+        report_id = f"report_{uuid.uuid4().hex[:12]}"
+        
+        # 创建异步任务
+        task_manager = TaskManager()
+        task_id = task_manager.create_task(
+            task_type="report_generate",
+            metadata={
+                "simulation_id": simulation_id,
+                "graph_id": graph_id,
+                "report_id": report_id
+            }
+        )
+        
+        # Capture locale for background thread
+        current_locale = get_locale()
+        
+        # 定义后台任务
+        def run_generate():
+            set_locale(current_locale)
+            try:
+                task_manager.update_task(
+                    task_id,
+                    status=TaskStatus.PROCESSING,
+                    progress=0,
+                    message=t('api.initReportAgent')
+                )
+                
+                # 创建Report Agent
+                agent = ReportAgent(
+                    graph_id=graph_id,
+                    simulation_id=simulation_id,
+                    simulation_requirement=simulation_requirement
+                )
+                
+                # 进度回调
+                def progress_callback(stage, progress, message):
+                    task_manager.update_task(
+                        task_id,
+                        progress=progress,
+                        message=f"[{stage}] {message}"
+                    )
+                
+                # 生成报告
+                report = agent.generate_report(
+                    progress_callback=progress_callback,
+                    report_id=report_id
+                )
+                
+                # 保存报告
+                ReportManager.save_report(report)
+                
+                if report.status == ReportStatus.COMPLETED:
+                    task_manager.complete_task(
+                        task_id,
+                        result={
+                            "report_id": report.report_id,
+                            "simulation_id": simulation_id,
+                            "status": "completed"
+                        }
+                    )
+                else:
+                    task_manager.fail_task(task_id, report.error or t('api.reportGenerateFailed'))
+                
+            except Exception as e:
+                logger.error(f"报告重新生成失败: {str(e)}")
+                task_manager.fail_task(task_id, str(e))
+        
+        # 启动后台线程
+        import threading
+        thread = threading.Thread(target=run_generate, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "simulation_id": simulation_id,
+                "report_id": report_id,
+                "task_id": task_id,
+                "status": "generating",
+                "message": "Report regeneration started"
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"重试报告生成失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@report_bp.route('/retry/section/<report_id>/<int:section_index>', methods=['POST'])
+def retry_section_generation(report_id: str, section_index: int):
+    """
+    重新生成报告的单个章节
+    
+    返回：
+        {
+            "success": true,
+            "data": {
+                "report_id": "report_xxxx",
+                "section_index": 1,
+                "status": "regenerating"
+            }
+        }
+    """
+    try:
+        # 获取报告
+        report = ReportManager.get_report(report_id)
+        
+        if not report:
+            return jsonify({
+                "success": False,
+                "error": t('api.reportNotFound', id=report_id)
+            }), 404
+        
+        # 检查章节是否存在
+        section_path = ReportManager._get_section_path(report_id, section_index)
+        
+        # 删除旧章节文件（如果存在）
+        if os.path.exists(section_path):
+            os.remove(section_path)
+            logger.info(f"已删除旧章节: section_{section_index:02d}.md")
+        
+        # 获取大纲
+        outline = report.outline
+        if not outline or section_index < 1 or section_index > len(outline.sections):
+            return jsonify({
+                "success": False,
+                "error": t('api.sectionNotFound', index=f"{section_index:02d}")
+            }), 400
+        
+        section = outline.sections[section_index - 1]
+        
+        # Capture locale for background thread
+        current_locale = get_locale()
+        
+        def regenerate_section():
+            set_locale(current_locale)
+            try:
+                # 创建Report Agent
+                agent = ReportAgent(
+                    graph_id=report.graph_id,
+                    simulation_id=report.simulation_id,
+                    simulation_requirement=report.simulation_requirement
+                )
+                
+                # 获取之前章节的内容
+                previous_sections = []
+                for i in range(1, section_index):
+                    prev_path = ReportManager._get_section_path(report_id, i)
+                    if os.path.exists(prev_path):
+                        with open(prev_path, 'r', encoding='utf-8') as f:
+                            previous_sections.append(f.read())
+                
+                # 重新生成章节
+                content = agent._generate_section_react(
+                    section=section,
+                    outline=outline,
+                    previous_sections=previous_sections,
+                    section_index=section_index - 1
+                )
+                
+                # 保存章节
+                ReportManager.save_section(report_id, section_index, content)
+                
+                logger.info(f"章节重新生成完成: section_{section_index:02d}.md")
+            except Exception as e:
+                logger.error(f"章节重新生成失败: {e}")
+        
+        # 在后台线程中执行
+        import threading
+        thread = threading.Thread(target=regenerate_section, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "report_id": report_id,
+                "section_index": section_index,
+                "status": "regenerating"
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"重试章节生成失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500

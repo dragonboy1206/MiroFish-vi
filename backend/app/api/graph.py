@@ -620,3 +620,226 @@ def delete_graph(graph_id: str):
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+# ============== Retry Endpoints ==============
+
+@graph_bp.route('/project/<project_id>/retry/ontology', methods=['POST'])
+def retry_ontology(project_id: str):
+    """
+    重新生成本体定义
+    
+    请求（JSON）：
+        {
+            "additional_context": "额外说明（可选）"
+        }
+    
+    返回：
+        {
+            "success": true,
+            "data": {
+                "project_id": "proj_xxxx",
+                "ontology": {...}
+            }
+        }
+    """
+    try:
+        project = ProjectManager.get_project(project_id)
+        
+        if not project:
+            return jsonify({
+                "success": False,
+                "error": t('api.projectNotFound', id=project_id)
+            }), 404
+        
+        # 检查是否有上传的文件
+        if not project.files:
+            return jsonify({
+                "success": False,
+                "error": t('api.requireFileUpload')
+            }), 400
+        
+        # 获取额外说明
+        data = request.get_json() or {}
+        additional_context = data.get('additional_context', '')
+        
+        # 读取已提取的文本
+        extracted_text = ProjectManager.get_extracted_text(project_id)
+        if not extracted_text:
+            return jsonify({
+                "success": False,
+                "error": t('api.textNotFound')
+            }), 400
+        
+        # 重新生成本体
+        logger.info(f"重新生成本体: project_id={project_id}")
+        
+        # Capture locale for background thread
+        current_locale = get_locale()
+        
+        def run_retry():
+            set_locale(current_locale)
+            try:
+                generator = OntologyGenerator()
+                ontology = generator.generate(
+                    document_texts=[extracted_text],
+                    simulation_requirement=project.simulation_requirement,
+                    additional_context=additional_context if additional_context else None
+                )
+                
+                # 保存本体到项目
+                project.ontology = {
+                    "entity_types": ontology.get("entity_types", []),
+                    "edge_types": ontology.get("edge_types", [])
+                }
+                project.analysis_summary = ontology.get("analysis_summary", "")
+                project.status = ProjectStatus.ONTOLOGY_GENERATED
+                project.error = None
+                ProjectManager.save_project(project)
+                
+                logger.info(f"本体重新生成完成: project_id={project_id}")
+            except Exception as e:
+                logger.error(f"本体重新生成失败: {e}")
+                project.error = str(e)
+                project.status = ProjectStatus.FAILED
+                ProjectManager.save_project(project)
+        
+        # 在后台线程中执行
+        thread = threading.Thread(target=run_retry, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            "success": True,
+            "message": "Ontology regeneration started",
+            "data": {
+                "project_id": project_id,
+                "status": "regenerating"
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"重试本体生成失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@graph_bp.route('/project/<project_id>/retry/graph', methods=['POST'])
+def retry_graph_build(project_id: str):
+    """
+    重新构建图谱
+    
+    返回：
+        {
+            "success": true,
+            "data": {
+                "project_id": "proj_xxxx",
+                "task_id": "task_xxxx"
+            }
+        }
+    """
+    try:
+        project = ProjectManager.get_project(project_id)
+        
+        if not project:
+            return jsonify({
+                "success": False,
+                "error": t('api.projectNotFound', id=project_id)
+            }), 404
+        
+        if not project.ontology:
+            return jsonify({
+                "success": False,
+                "error": t('api.ontologyNotGenerated')
+            }), 400
+        
+        # 重置图谱相关状态
+        project.graph_id = None
+        project.graph_build_task_id = None
+        project.error = None
+        project.status = ProjectStatus.ONTOLOGY_GENERATED
+        ProjectManager.save_project(project)
+        
+        # 重新构建图谱
+        logger.info(f"重新构建图谱: project_id={project_id}")
+        
+        # Capture locale for background thread
+        current_locale = get_locale()
+        
+        def run_build():
+            set_locale(current_locale)
+            try:
+                # 创建任务
+                task_manager = TaskManager()
+                task_id = task_manager.create_task(
+                    task_type="graph_build",
+                    metadata={"project_id": project_id}
+                )
+                
+                # 更新项目状态
+                project.graph_build_task_id = task_id
+                project.status = ProjectStatus.GRAPH_BUILDING
+                ProjectManager.save_project(project)
+                
+                # 构建图谱
+                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                
+                # 进度回调
+                def progress_callback(progress, message):
+                    task_manager.update_task(task_id, progress=progress, message=message)
+                
+                # 读取文本
+                extracted_text = ProjectManager.get_extracted_text(project_id)
+                
+                # 构建
+                graph_info = builder.build_graph(
+                    text=extracted_text,
+                    ontology=project.ontology,
+                    graph_name=f"mirofish_{project_id}",
+                    progress_callback=progress_callback
+                )
+                
+                # 保存结果
+                project.graph_id = graph_info.graph_id
+                project.status = ProjectStatus.GRAPH_COMPLETED
+                ProjectManager.save_project(project)
+                
+                task_manager.complete_task(task_id, result={
+                    "graph_id": graph_info.graph_id,
+                    "node_count": graph_info.node_count,
+                    "edge_count": graph_info.edge_count
+                })
+                
+                logger.info(f"图谱重新构建完成: graph_id={graph_info.graph_id}")
+                
+            except Exception as e:
+                logger.error(f"图谱重新构建失败: {e}")
+                project.error = str(e)
+                project.status = ProjectStatus.FAILED
+                ProjectManager.save_project(project)
+                
+                if 'task_id' in locals():
+                    task_manager.fail_task(task_id, str(e))
+        
+        # 在后台线程中执行
+        thread = threading.Thread(target=run_build, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            "success": True,
+            "message": "Graph rebuild started",
+            "data": {
+                "project_id": project_id,
+                "task_id": project.graph_build_task_id
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"重试图谱构建失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500

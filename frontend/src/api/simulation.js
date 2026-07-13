@@ -185,3 +185,20 @@ export const getSimulationHistory = (limit = 20) => {
   return service.get('/api/simulation/history', { params: { limit } })
 }
 
+/**
+ * 重新准备模拟环境
+ * @param {string} simulationId - 模拟ID
+ */
+export const retrySimulationPrepare = (simulationId) => {
+  return service.post(`/api/simulation/${simulationId}/retry/prepare`)
+}
+
+/**
+ * 重新运行模拟
+ * @param {string} simulationId - 模拟ID
+ * @param {Object} data - { max_rounds? }
+ */
+export const retrySimulationRun = (simulationId, data = {}) => {
+  return service.post(`/api/simulation/${simulationId}/retry/run`, data)
+}
+

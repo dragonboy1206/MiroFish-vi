@@ -18,7 +18,7 @@ from zep_cloud.client import Zep
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.llm_client import LLMClient
-from ..utils.locale import get_locale, t
+from ..utils.locale import get_locale, t, get_language_instruction
 from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 
 logger = get_logger('mirofish.zep_tools')
@@ -1101,13 +1101,15 @@ class ZepToolsService:
         
         将复杂问题分解为多个可以独立检索的子问题
         """
-        system_prompt = """你是一个专业的问题分析专家。你的任务是将一个复杂问题分解为多个可以在模拟世界中独立观察的子问题。
+        system_prompt = f"""你是一个专业的问题分析专家。你的任务是将一个复杂问题分解为多个可以在模拟世界中独立观察的子问题。
 
 要求：
 1. 每个子问题应该足够具体，可以在模拟世界中找到相关的Agent行为或事件
 2. 子问题应该覆盖原问题的不同维度（如：谁、什么、为什么、怎么样、何时、何地）
 3. 子问题应该与模拟场景相关
-4. 返回JSON格式：{"sub_queries": ["子问题1", "子问题2", ...]}"""
+4. 返回JSON格式：{{"sub_queries": ["子问题1", "子问题2", ...]}}
+
+{get_language_instruction()}"""
 
         user_prompt = f"""模拟需求背景：
 {simulation_requirement}
@@ -1134,13 +1136,22 @@ class ZepToolsService:
             
         except Exception as e:
             logger.warning(t("console.generateSubQueriesFailed", error=str(e)))
-            # 降级：返回基于原问题的变体
-            return [
-                query,
-                f"{query} 的主要参与者",
-                f"{query} 的原因和影响",
-                f"{query} 的发展过程"
-            ][:max_queries]
+            # Fallback: return variants of the original query
+            locale = get_locale()
+            if locale == 'vi':
+                return [
+                    query,
+                    f"Những người tham gia chính trong {query}",
+                    f"Nguyên nhân và tác động của {query}",
+                    f"Quá trình phát triển của {query}"
+                ][:max_queries]
+            else:
+                return [
+                    query,
+                    f"{query} 的主要参与者",
+                    f"{query} 的原因和影响",
+                    f"{query} 的发展过程"
+                ][:max_queries]
     
     def panorama_search(
         self,
@@ -1577,7 +1588,7 @@ class ZepToolsService:
             }
             agent_summaries.append(summary)
         
-        system_prompt = """你是一个专业的采访策划专家。你的任务是根据采访需求，从模拟Agent列表中选择最适合采访的对象。
+        system_prompt = f"""你是一个专业的采访策划专家。你的任务是根据采访需求，从模拟Agent列表中选择最适合采访的对象。
 
 选择标准：
 1. Agent的身份/职业与采访主题相关
@@ -1586,10 +1597,12 @@ class ZepToolsService:
 4. 优先选择与事件直接相关的角色
 
 返回JSON格式：
-{
+{{
     "selected_indices": [选中Agent的索引列表],
     "reasoning": "选择理由说明"
-}"""
+}}
+
+{get_language_instruction()}"""
 
         user_prompt = f"""采访需求：
 {interview_requirement}
@@ -1612,7 +1625,9 @@ class ZepToolsService:
             )
             
             selected_indices = response.get("selected_indices", [])[:max_agents]
-            reasoning = response.get("reasoning", "基于相关性自动选择")
+            locale = get_locale()
+            default_reasoning = "Lựa chọn tự động dựa trên mức độ liên quan" if locale == 'vi' else "基于相关性自动选择"
+            reasoning = response.get("reasoning", default_reasoning)
             
             # 获取选中的Agent完整信息
             selected_agents = []
@@ -1626,10 +1641,12 @@ class ZepToolsService:
             
         except Exception as e:
             logger.warning(t("console.llmSelectAgentFailed", error=e))
-            # 降级：选择前N个
+            # Fallback: select first N
+            locale = get_locale()
             selected = profiles[:max_agents]
             indices = list(range(min(max_agents, len(profiles))))
-            return selected, indices, "使用默认选择策略"
+            default_strategy = "Sử dụng chiến lược lựa chọn mặc định" if locale == 'vi' else "使用默认选择策略"
+            return selected, indices, default_strategy
     
     def _generate_interview_questions(
         self,
@@ -1641,7 +1658,7 @@ class ZepToolsService:
         
         agent_roles = [a.get("profession", "未知") for a in selected_agents]
         
-        system_prompt = """你是一个专业的记者/采访者。根据采访需求，生成3-5个深度采访问题。
+        system_prompt = f"""你是一个专业的记者/采访者。根据采访需求，生成3-5个深度采访问题。
 
 问题要求：
 1. 开放性问题，鼓励详细回答
@@ -1651,7 +1668,9 @@ class ZepToolsService:
 5. 每个问题控制在50字以内，简洁明了
 6. 直接提问，不要包含背景说明或前缀
 
-返回JSON格式：{"questions": ["问题1", "问题2", ...]}"""
+返回JSON格式：{{"questions": ["问题1", "问题2", ...]}}
+
+{get_language_instruction()}"""
 
         user_prompt = f"""采访需求：{interview_requirement}
 
@@ -1670,15 +1689,25 @@ class ZepToolsService:
                 temperature=0.5
             )
             
-            return response.get("questions", [f"关于{interview_requirement}，您有什么看法？"])
+            locale = get_locale()
+            default_question = f"Bạn có quan điểm gì về {interview_requirement}?" if locale == 'vi' else f"关于{interview_requirement}，您有什么看法？"
+            return response.get("questions", [default_question])
             
         except Exception as e:
             logger.warning(t("console.generateInterviewQuestionsFailed", error=e))
-            return [
-                f"关于{interview_requirement}，您的观点是什么？",
-                "这件事对您或您所代表的群体有什么影响？",
-                "您认为应该如何解决或改进这个问题？"
-            ]
+            locale = get_locale()
+            if locale == 'vi':
+                return [
+                    f"Bạn có quan điểm gì về {interview_requirement}?",
+                    "Sự việc này ảnh hưởng như thế nào đến bạn hoặc nhóm người bạn đại diện?",
+                    "Theo bạn nên giải quyết hoặc cải thiện vấn đề này như thế nào?"
+                ]
+            else:
+                return [
+                    f"关于{interview_requirement}，您的观点是什么？",
+                    "这件事对您或您所代表的群体有什么影响？",
+                    "您认为应该如何解决或改进这个问题？"
+                ]
     
     def _generate_interview_summary(
         self,
@@ -1688,14 +1717,21 @@ class ZepToolsService:
         """生成采访摘要"""
         
         if not interviews:
-            return "未完成任何采访"
+            locale = get_locale()
+            return "Chưa hoàn thành cuộc phỏng vấn nào" if locale == 'vi' else "未完成任何采访"
         
         # 收集所有采访内容
         interview_texts = []
         for interview in interviews:
             interview_texts.append(f"【{interview.agent_name}（{interview.agent_role}）】\n{interview.response[:500]}")
         
-        quote_instruction = "引用受访者原话时使用中文引号「」" if get_locale() == 'zh' else 'Use quotation marks "" when quoting interviewees'
+        locale = get_locale()
+        if locale == 'vi':
+            quote_instruction = 'Khi trích dẫn nguyên văn người được phỏng vấn, sử dụng dấu ngoặc kép ""'
+        elif locale == 'zh':
+            quote_instruction = "引用受访者原话时使用中文引号「」"
+        else:
+            quote_instruction = 'Use quotation marks "" when quoting interviewees'
         system_prompt = f"""你是一个专业的新闻编辑。请根据多位受访者的回答，生成一份采访摘要。
 
 摘要要求：
@@ -1710,7 +1746,9 @@ class ZepToolsService:
 - 不要使用Markdown标题（如#、##、###）
 - 不要使用分割线（如---、***）
 - {quote_instruction}
-- 可以使用**加粗**标记关键词，但不要使用其他Markdown语法"""
+- 可以使用**加粗**标记关键词，但不要使用其他Markdown语法
+
+{get_language_instruction()}"""
 
         user_prompt = f"""采访主题：{interview_requirement}
 

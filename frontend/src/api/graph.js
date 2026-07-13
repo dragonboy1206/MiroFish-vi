@@ -68,3 +68,41 @@ export function getProject(projectId) {
     method: 'get'
   })
 }
+
+/**
+ * 重新生成本体
+ * @param {String} projectId - 项目ID
+ * @param {Object} data - 包含additional_context等
+ * @returns {Promise}
+ */
+export function retryOntology(projectId, data = {}) {
+  return service({
+    url: `/api/graph/project/${projectId}/retry/ontology`,
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 重新构建图谱
+ * @param {String} projectId - 项目ID
+ * @returns {Promise}
+ */
+export function retryGraphBuild(projectId) {
+  return service({
+    url: `/api/graph/project/${projectId}/retry/graph`,
+    method: 'post'
+  })
+}
+
+/**
+ * 重置项目
+ * @param {String} projectId - 项目ID
+ * @returns {Promise}
+ */
+export function resetProject(projectId) {
+  return service({
+    url: `/api/graph/project/${projectId}/reset`,
+    method: 'post'
+  })
+}

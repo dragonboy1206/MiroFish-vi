@@ -60,6 +60,8 @@
           :graphData="graphData"
           :systemLogs="systemLogs"
           @next-step="handleNextStep"
+          @retry-ontology="handleRetryOntology"
+          @retry-graph="handleRetryGraph"
         />
         <!-- Step 2: 环境搭建 -->
         <Step2EnvSetup
@@ -177,6 +179,49 @@ const handleGoBack = () => {
   if (currentStep.value > 1) {
     currentStep.value--
     addLog(t('log.returnToStep', { step: currentStep.value, name: stepNames.value[currentStep.value - 1] }))
+  }
+}
+
+// --- Retry Handlers ---
+const handleRetryOntology = async () => {
+  addLog('Retrying ontology generation...')
+  currentPhase.value = 0
+  ontologyProgress.value = { message: 'Regenerating ontology...' }
+  
+  // Poll for updates
+  const checkStatus = setInterval(async () => {
+    if (currentProjectId.value) {
+      const res = await getProject(currentProjectId.value)
+      if (res.success) {
+        projectData.value = res.data
+        if (res.data.status === 'ontology_generated') {
+          clearInterval(checkStatus)
+          ontologyProgress.value = null
+          currentPhase.value = 0
+          addLog('Ontology regenerated successfully.')
+        } else if (res.data.status === 'failed') {
+          clearInterval(checkStatus)
+          ontologyProgress.value = null
+          error.value = res.data.error || 'Ontology regeneration failed'
+          addLog(`Ontology regeneration failed: ${error.value}`)
+        }
+      }
+    }
+  }, 2000)
+}
+
+const handleRetryGraph = async () => {
+  addLog('Retrying graph build...')
+  currentPhase.value = 1
+  buildProgress.value = { progress: 0, message: 'Rebuilding graph...' }
+  
+  // Start polling for task status
+  if (currentProjectId.value) {
+    const res = await getProject(currentProjectId.value)
+    if (res.success && res.data.graph_build_task_id) {
+      startPollingTask(res.data.graph_build_task_id)
+      startGraphPolling()
+    }
   }
 }
 

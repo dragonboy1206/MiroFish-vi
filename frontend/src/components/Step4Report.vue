@@ -31,6 +31,19 @@
               <div class="section-header-row" @click="toggleSectionCollapse(idx)" :class="{ 'clickable': isSectionCompleted(idx + 1) }">
                 <span class="section-number">{{ String(idx + 1).padStart(2, '0') }}</span>
                 <h3 class="section-title">{{ section.title }}</h3>
+                <button 
+                  v-if="isSectionCompleted(idx + 1)" 
+                  class="section-retry-btn" 
+                  :disabled="retryingSection === idx + 1"
+                  @click.stop="handleRetrySection(idx + 1)"
+                  :title="$t('common.retrySubStep')"
+                >
+                  <span v-if="retryingSection === idx + 1" class="spinner-xs"></span>
+                  <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                  </svg>
+                </button>
                 <svg 
                   v-if="isSectionCompleted(idx + 1)" 
                   class="collapse-icon" 
@@ -128,13 +141,19 @@
           </div>
 
           <!-- Next Step Button - 在完成后显示 -->
-          <button v-if="isComplete" class="next-step-btn" @click="goToInteraction">
-            <span>{{ $t('step4.goToInteraction') }}</span>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
-            </svg>
-          </button>
+          <div v-if="isComplete" class="completed-actions">
+            <button class="retry-btn" :disabled="retryingReport" @click="handleRetryReport">
+              <span v-if="retryingReport" class="spinner-sm"></span>
+              {{ retryingReport ? $t('common.retrying') : $t('common.retryStep') }}
+            </button>
+            <button class="next-step-btn" @click="goToInteraction">
+              <span>{{ $t('step4.goToInteraction') }}</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
 
           <div class="workflow-divider"></div>
         </div>
@@ -393,7 +412,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, h, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getAgentLog, getConsoleLog } from '../api/report'
+import { getAgentLog, getConsoleLog, retryReportGeneration, retrySectionGeneration } from '../api/report'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -404,7 +423,7 @@ const props = defineProps({
   systemLogs: Array
 })
 
-const emit = defineEmits(['add-log', 'update-status'])
+const emit = defineEmits(['add-log', 'update-status', 'retry-report', 'retry-section'])
 
 // Navigation
 const goToInteraction = () => {
@@ -428,6 +447,8 @@ const isComplete = ref(false)
 const startTime = ref(null)
 const leftPanel = ref(null)
 const rightPanel = ref(null)
+const retryingReport = ref(false)
+const retryingSection = ref(null)
 const logContent = ref(null)
 const showRawResult = reactive({})
 
@@ -492,6 +513,86 @@ const isLogCollapsed = (log) => {
     return !expandedLogs.value.has(log.timestamp)
   }
   return false
+}
+
+// Retry handlers
+const handleRetryReport = async () => {
+  if (!props.simulationId) return
+  
+  if (!confirm(t('common.retryStepConfirm'))) return
+  
+  retryingReport.value = true
+  try {
+    const res = await retryReportGeneration(props.simulationId)
+    if (res.success) {
+      // Reset state
+      agentLogs.value = []
+      consoleLogs.value = []
+      reportOutline.value = null
+      currentSectionIndex.value = null
+      generatedSections.value = {}
+      isComplete.value = false
+      startTime.value = Date.now()
+      
+      addLog(t('common.retrySuccess'))
+      emit('retry-report')
+      
+      // Start polling for new report
+      startPolling(res.data.report_id)
+    } else {
+      addLog(t('common.retryFailed') + ': ' + (res.error || t('common.unknownError')))
+    }
+  } catch (err) {
+    addLog(t('common.retryFailed') + ': ' + err.message)
+  } finally {
+    retryingReport.value = false
+  }
+}
+
+const handleRetrySection = async (sectionIndex) => {
+  if (!props.reportId) return
+  
+  if (!confirm(t('common.retrySubStepConfirm'))) return
+  
+  retryingSection.value = sectionIndex
+  try {
+    const res = await retrySectionGeneration(props.reportId, sectionIndex)
+    if (res.success) {
+      // Remove old content
+      delete generatedSections.value[sectionIndex]
+      
+      addLog(t('common.retrySuccess') + ` - Section ${sectionIndex}`)
+      emit('retry-section', sectionIndex)
+      
+      // Start polling for section updates
+      startSectionPolling(sectionIndex)
+    } else {
+      addLog(t('common.retryFailed') + ': ' + (res.error || t('common.unknownError')))
+    }
+  } catch (err) {
+    addLog(t('common.retryFailed') + ': ' + err.message)
+  } finally {
+    retryingSection.value = null
+  }
+}
+
+const startSectionPolling = (sectionIndex) => {
+  // Poll for section content updates
+  const checkSection = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/report/${props.reportId}/section/${sectionIndex}`)
+      const data = await res.json()
+      if (data.success && data.data?.content) {
+        generatedSections.value[sectionIndex] = data.data.content
+        clearInterval(checkSection)
+      }
+    } catch (err) {
+      // Ignore errors during polling
+    }
+  }, 3000)
+  
+  // Stop polling after 5 minutes
+  setTimeout(() => clearInterval(checkSection), 300000)
 }
 
 // Tool configurations with display names and colors
@@ -5152,6 +5253,83 @@ watch(() => props.reportId, (newId) => {
 .log-msg.error { color: #EF5350; }
 .log-msg.warning { color: #FFA726; }
 .log-msg.success { color: #66BB6A; }
+
+/* Retry Buttons */
+.completed-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid #D1D5DB;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #4B5563;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.retry-btn:hover:not(:disabled) {
+  background: #F9FAFB;
+  border-color: #9CA3AF;
+}
+
+.retry-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.retry-btn .spinner-sm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #E5E7EB;
+  border-top-color: #4B5563;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.section-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #9CA3AF;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.section-retry-btn:hover {
+  background: #F3F4F6;
+  border-color: #D1D5DB;
+  color: #4B5563;
+}
+
+.section-retry-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spinner-xs {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #E5E7EB;
+  border-top-color: #4B5563;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 
 <style>

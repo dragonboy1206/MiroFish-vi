@@ -586,7 +586,9 @@ class SimulationConfigGenerator:
 - reasoning (string): 简要说明为什么这样配置"""
 
         system_prompt = "你是社交媒体模拟专家。返回纯JSON格式，时间配置需符合模拟场景中目标用户群体的作息习惯。"
-        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
+        # Add language instruction at the beginning for stronger effect
+        lang_instruction = get_language_instruction()
+        system_prompt = f"{lang_instruction}\n\n{system_prompt}\n\n{lang_instruction}"
 
         try:
             return self._call_llm_with_retry(prompt, system_prompt)

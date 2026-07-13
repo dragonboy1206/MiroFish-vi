@@ -91,6 +91,17 @@
       </div>
 
       <div class="action-controls">
+        <!-- Retry Simulation Button -->
+        <button 
+          v-if="phase === 2 || phase === 3"
+          class="retry-btn" 
+          :disabled="retryingSimulation"
+          @click="handleRetrySimulation"
+        >
+          <span v-if="retryingSimulation" class="spinner-sm"></span>
+          {{ retryingSimulation ? $t('common.retrying') : $t('common.retryStep') }}
+        </button>
+        
         <button 
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
@@ -293,7 +304,8 @@ import {
   startSimulation,
   stopSimulation,
   getRunStatus,
-  getRunStatusDetail
+  getRunStatusDetail,
+  retrySimulationRun
 } from '../api/simulation'
 import { generateReport } from '../api/report'
 
@@ -311,7 +323,7 @@ const props = defineProps({
   systemLogs: Array
 })
 
-const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
+const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status', 'retry-simulation'])
 
 const router = useRouter()
 
@@ -325,6 +337,7 @@ const runStatus = ref({})
 const allActions = ref([]) // 所有动作（增量累积）
 const actionIds = ref(new Set()) // 用于去重的动作ID集合
 const scrollContainer = ref(null)
+const retryingSimulation = ref(false)
 
 // Computed
 // 按时间顺序显示动作（最新的在最后面，即底部）
@@ -459,6 +472,36 @@ const handleStopSimulation = async () => {
     addLog(t('log.stopException', { error: err.message }))
   } finally {
     isStopping.value = false
+  }
+}
+
+// Retry simulation
+const handleRetrySimulation = async () => {
+  if (!props.simulationId) return
+  
+  if (!confirm(t('common.retryStepConfirm'))) return
+  
+  retryingSimulation.value = true
+  try {
+    const res = await retrySimulationRun(props.simulationId, {
+      max_rounds: props.maxRounds
+    })
+    
+    if (res.success) {
+      // Reset state
+      resetAllState()
+      addLog(t('common.retrySuccess'))
+      emit('retry-simulation')
+      
+      // Restart simulation
+      await doStartSimulation()
+    } else {
+      addLog(t('common.retryFailed') + ': ' + (res.error || t('common.unknownError')))
+    }
+  } catch (err) {
+    addLog(t('common.retryFailed') + ': ' + err.message)
+  } finally {
+    retryingSimulation.value = false
   }
 }
 
@@ -1194,6 +1237,43 @@ onUnmounted(() => {
   0% { transform: scale(0.8); opacity: 1; border-color: #CCC; }
   100% { transform: scale(2.5); opacity: 0; border-color: #EAEAEA; }
 }
+
+/* Retry Button */
+.retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid #DDD;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.retry-btn:hover:not(:disabled) {
+  background: #F5F5F5;
+  border-color: #CCC;
+  color: #333;
+}
+
+.retry-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.retry-btn .spinner-sm {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #DDD;
+  border-top-color: #666;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Animation */
 .timeline-item-enter-active,

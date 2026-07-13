@@ -2714,3 +2714,193 @@ def close_simulation_env():
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+# ============== Retry Endpoints ==============
+
+@simulation_bp.route('/<simulation_id>/retry/prepare', methods=['POST'])
+def retry_simulation_prepare(simulation_id: str):
+    """
+    重新准备模拟环境
+    
+    返回：
+        {
+            "success": true,
+            "data": {
+                "simulation_id": "sim_xxxx",
+                "task_id": "task_xxxx"
+            }
+        }
+    """
+    try:
+        manager = SimulationManager()
+        state = manager.get_simulation(simulation_id)
+        
+        if not state:
+            return jsonify({
+                "success": False,
+                "error": t('api.simulationNotFound', id=simulation_id)
+            }), 404
+        
+        # 获取项目信息
+        project = ProjectManager.get_project(state.project_id)
+        if not project:
+            return jsonify({
+                "success": False,
+                "error": t('api.projectNotFound', id=state.project_id)
+            }), 404
+        
+        graph_id = state.graph_id or project.graph_id
+        if not graph_id:
+            return jsonify({
+                "success": False,
+                "error": t('api.missingGraphIdEnsure')
+            }), 400
+        
+        # 重置模拟状态
+        state.status = SimulationStatus.CREATED
+        state.error = None
+        state.prepared = False
+        manager._save_simulation_state(state)
+        
+        logger.info(f"重新准备模拟环境: simulation_id={simulation_id}")
+        
+        # Capture locale for background thread
+        current_locale = get_locale()
+        
+        def run_prepare():
+            set_locale(current_locale)
+            try:
+                # 重新准备
+                manager.prepare_simulation(
+                    simulation_id=simulation_id,
+                    progress_callback=lambda p, m: logger.info(f"[{p}%] {m}")
+                )
+                logger.info(f"模拟环境重新准备完成: simulation_id={simulation_id}")
+            except Exception as e:
+                logger.error(f"模拟环境重新准备失败: {e}")
+                state.status = SimulationStatus.FAILED
+                state.error = str(e)
+                manager._save_simulation_state(state)
+        
+        # 在后台线程中执行
+        import threading
+        thread = threading.Thread(target=run_prepare, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            "success": True,
+            "message": "Simulation preparation retry started",
+            "data": {
+                "simulation_id": simulation_id,
+                "status": "preparing"
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"重试模拟准备失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@simulation_bp.route('/<simulation_id>/retry/run', methods=['POST'])
+def retry_simulation_run(simulation_id: str):
+    """
+    重新运行模拟
+    
+    请求（JSON）：
+        {
+            "max_rounds": 10  // 可选，最大模拟轮数
+        }
+    
+    返回：
+        {
+            "success": true,
+            "data": {
+                "simulation_id": "sim_xxxx"
+            }
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        max_rounds = data.get('max_rounds')
+        
+        manager = SimulationManager()
+        state = manager.get_simulation(simulation_id)
+        
+        if not state:
+            return jsonify({
+                "success": False,
+                "error": t('api.simulationNotFound', id=simulation_id)
+            }), 404
+        
+        # 检查是否已准备好
+        if not state.prepared:
+            return jsonify({
+                "success": False,
+                "error": t('api.simNotReady', status=state.status.value)
+            }), 400
+        
+        # 停止当前运行的模拟（如果有）
+        if state.status == SimulationStatus.RUNNING:
+            try:
+                SimulationRunner.close_simulation_env(simulation_id=simulation_id, timeout=10)
+            except:
+                pass
+        
+        # 重置状态
+        state.status = SimulationStatus.PREPARED
+        state.error = None
+        manager._save_simulation_state(state)
+        
+        logger.info(f"重新运行模拟: simulation_id={simulation_id}, max_rounds={max_rounds}")
+        
+        # Capture locale for background thread
+        current_locale = get_locale()
+        
+        def run_simulation():
+            set_locale(current_locale)
+            try:
+                # 运行模拟
+                runner = SimulationRunner()
+                result = runner.run_simulation(
+                    simulation_id=simulation_id,
+                    max_rounds=max_rounds,
+                    progress_callback=lambda p, m: logger.info(f"[{p}%] {m}")
+                )
+                
+                # 更新状态
+                state.status = SimulationStatus.COMPLETED
+                manager._save_simulation_state(state)
+                
+                logger.info(f"模拟重新运行完成: simulation_id={simulation_id}")
+            except Exception as e:
+                logger.error(f"模拟重新运行失败: {e}")
+                state.status = SimulationStatus.FAILED
+                state.error = str(e)
+                manager._save_simulation_state(state)
+        
+        # 在后台线程中执行
+        import threading
+        thread = threading.Thread(target=run_simulation, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            "success": True,
+            "message": "Simulation retry started",
+            "data": {
+                "simulation_id": simulation_id,
+                "status": "running"
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"重试模拟运行失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500

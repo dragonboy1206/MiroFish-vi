@@ -27,6 +27,18 @@
             <span>{{ ontologyProgress.message || $t('step1.analyzingDocs') }}</span>
           </div>
 
+          <!-- Retry Button for Ontology -->
+          <div v-if="currentPhase > 0" class="retry-section">
+            <button 
+              class="retry-btn" 
+              :disabled="retryingOntology"
+              @click="handleRetryOntology"
+            >
+              <span v-if="retryingOntology" class="spinner-sm"></span>
+              {{ retryingOntology ? $t('common.retrying') : $t('common.retrySubStep') }}
+            </button>
+          </div>
+
           <!-- Detail Overlay -->
           <div v-if="selectedOntologyItem" class="ontology-detail-overlay">
             <div class="detail-header">
@@ -140,6 +152,18 @@
               <span class="stat-label">{{ $t('step1.schemaTypes') }}</span>
             </div>
           </div>
+
+          <!-- Retry Button for Graph Build -->
+          <div v-if="currentPhase > 1" class="retry-section">
+            <button 
+              class="retry-btn" 
+              :disabled="retryingGraph"
+              @click="handleRetryGraph"
+            >
+              <span v-if="retryingGraph" class="spinner-sm"></span>
+              {{ retryingGraph ? $t('common.retrying') : $t('common.retrySubStep') }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -191,6 +215,7 @@ import { computed, ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { createSimulation } from '../api/simulation'
+import { retryOntology, retryGraphBuild } from '../api/graph'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -204,11 +229,13 @@ const props = defineProps({
   systemLogs: { type: Array, default: () => [] }
 })
 
-defineEmits(['next-step'])
+const emit = defineEmits(['next-step', 'retry-ontology', 'retry-graph'])
 
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
 const creatingSimulation = ref(false)
+const retryingOntology = ref(false)
+const retryingGraph = ref(false)
 
 // 进入环境搭建 - 创建 simulation 并跳转
 const handleEnterEnvSetup = async () => {
@@ -247,6 +274,48 @@ const handleEnterEnvSetup = async () => {
 
 const selectOntologyItem = (item, type) => {
   selectedOntologyItem.value = { ...item, itemType: type }
+}
+
+// Retry ontology generation
+const handleRetryOntology = async () => {
+  if (!props.projectData?.project_id) return
+  
+  if (!confirm(t('common.retrySubStepConfirm'))) return
+  
+  retryingOntology.value = true
+  try {
+    const res = await retryOntology(props.projectData.project_id)
+    if (res.success) {
+      emit('retry-ontology')
+    } else {
+      alert(t('common.retryFailed') + ': ' + (res.error || t('common.unknownError')))
+    }
+  } catch (err) {
+    alert(t('common.retryFailed') + ': ' + err.message)
+  } finally {
+    retryingOntology.value = false
+  }
+}
+
+// Retry graph build
+const handleRetryGraph = async () => {
+  if (!props.projectData?.project_id) return
+  
+  if (!confirm(t('common.retrySubStepConfirm'))) return
+  
+  retryingGraph.value = true
+  try {
+    const res = await retryGraphBuild(props.projectData.project_id)
+    if (res.success) {
+      emit('retry-graph')
+    } else {
+      alert(t('common.retryFailed') + ': ' + (res.error || t('common.unknownError')))
+    }
+  } catch (err) {
+    alert(t('common.retryFailed') + ': ' + err.message)
+  } finally {
+    retryingGraph.value = false
+  }
 }
 
 const graphStats = computed(() => {
@@ -642,6 +711,44 @@ watch(() => props.systemLogs.length, () => {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Retry Section */
+.retry-section {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid #DDD;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.retry-btn:hover:not(:disabled) {
+  background: #F5F5F5;
+  border-color: #CCC;
+  color: #333;
+}
+
+.retry-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.retry-btn .spinner-sm {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
+}
 
 /* System Logs */
 .system-logs {

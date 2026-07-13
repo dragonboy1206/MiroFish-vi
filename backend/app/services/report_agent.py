@@ -547,6 +547,82 @@ TOOL_DESC_INTERVIEW_AGENTS = """\
 
 【重要】需要OASIS模拟环境正在运行才能使用此功能！"""
 
+# ── Vietnamese Tool Descriptions ──
+
+TOOL_DESC_INSIGHT_FORGE_VI = """\
+【Truy vấn sâu InsightForge - Công cụ tìm kiếm mạnh mẽ】
+Đây là hàm tìm kiếm mạnh mẽ, được thiết kế cho phân tích chuyên sâu. Nó sẽ:
+1. Tự động phân tách câu hỏi của bạn thành nhiều câu hỏi phụ
+2. Tìm kiếm thông tin từ đồ thị mô phỏng theo nhiều chiều
+3. Tổng hợp kết quả từ tìm kiếm ngữ nghĩa, phân tích thực thể, truy vết chuỗi quan hệ
+4. Trả về nội dung tìm kiếm toàn diện và sâu sắc nhất
+
+【Kịch bản sử dụng】
+- Cần phân tích sâu một chủ đề
+- Cần hiểu nhiều khía cạnh của sự kiện
+- Cần thu thập tài liệu phong phú cho chương báo cáo
+
+【Nội dung trả về】
+- Sự kiện liên quan原文 (có thể trích dẫn trực tiếp)
+- Thông tin chuyên sâu về thực thể cốt lõi
+- Phân tích chuỗi quan hệ"""
+
+TOOL_DESC_PANORAMA_SEARCH_VI = """\
+【Tìm kiếm panorama - Quan sát toàn cảnh】
+Công cụ này dùng để lấy bức tranh toàn cảnh kết quả mô phỏng, đặc biệt phù hợp để hiểu quá trình diễn biến sự kiện. Nó sẽ:
+1. Lấy tất cả các nút và quan hệ liên quan
+2. Phân biệt sự kiện hiện tại và sự kiện lịch sử/hết hạn
+3. Giúp bạn hiểu dư luận đã biến đổi như thế nào
+
+【Kịch bản sử dụng】
+- Cần hiểu toàn bộ mạch phát triển của sự kiện
+- Cần so sánh biến đổi dư luận qua các giai đoạn
+- Cần thu thập thông tin toàn diện về thực thể và quan hệ
+
+【Nội dung trả về】
+- Sự kiện hiện tại (kết quả mô phỏng mới nhất)
+- Sự kiện lịch sử/hết hạn (ghi chép diễn biến)
+- Tất cả thực thể liên quan"""
+
+TOOL_DESC_QUICK_SEARCH_VI = """\
+【Tìm kiếm nhanh QuickSearch】
+Công cụ tìm kiếm nhẹ, phù hợp cho truy vấn thông tin đơn giản và trực tiếp.
+
+【Kịch bản sử dụng】
+- Cần tìm nhanh một thông tin cụ thể
+- Cần xác minh một sự kiện
+- Tìm kiếm thông tin đơn giản
+
+【Nội dung trả về】
+- Danh sách sự kiện liên quan nhất đến truy vấn"""
+
+TOOL_DESC_INTERVIEW_AGENTS_VI = """\
+【Phỏng vấn sâu - Phỏng vấn Agent thực (Hai nền tảng)】
+Gọi API phỏng vấn của môi trường mô phỏng OASIS để phỏng vấn các Agent đang chạy!
+Đây không phải mô phỏng LLM, mà là gọi giao diện phỏng vấn thực để lấy câu trả lời gốc từ Agent mô phỏng.
+Mặc định phỏng vấn đồng thời trên cả hai nền tảng Twitter và Reddit để thu thập quan điểm toàn diện hơn.
+
+Quy trình:
+1. Tự động đọc tệp hồ sơ để hiểu tất cả Agent mô phỏng
+2. Lựa chọn thông minh các Agent liên quan nhất đến chủ đề phỏng vấn
+3. Tự động tạo câu hỏi phỏng vấn
+4. Gọi API /api/simulation/interview/batch để phỏng vấn thực trên hai nền tảng
+5. Tổng hợp tất cả kết quả phỏng vấn, cung cấp phân tích đa chiều
+
+【Kịch bản sử dụng】
+- Cần hiểu quan điểm từ các góc nhìn khác nhau (sinh viên nghĩ gì? Truyền thông nói gì? Cơ quan chính thức phát biểu gì?)
+- Cần thu thập ý kiến và lập trường từ nhiều phía
+- Cần lấy câu trả lời thực từ Agent mô phỏng (từ môi trường mô phỏng OASIS)
+- Muốn báo cáo sinh động hơn,包含 "ghi chép phỏng vấn"
+
+【Nội dung trả về】
+- Thông tin身份 của Agent được phỏng vấn
+- Câu trả lời phỏng vấn của mỗi Agent trên cả hai nền tảng Twitter và Reddit
+- Trích dẫn quan trọng (có thể trích dẫn trực tiếp)
+- Tóm tắt phỏng vấn và so sánh quan điểm
+
+【Quan trọng】Cần môi trường mô phỏng OASIS đang chạy để sử dụng tính năng này!"""
+
 # ── 大纲规划 prompt ──
 
 PLAN_SYSTEM_PROMPT = """\
@@ -918,6 +994,44 @@ class ReportAgent:
     
     def _define_tools(self) -> Dict[str, Dict[str, Any]]:
         """定义可用工具"""
+        locale = get_locale()
+        
+        if locale == 'vi':
+            return {
+                "insight_forge": {
+                    "name": "insight_forge",
+                    "description": TOOL_DESC_INSIGHT_FORGE_VI,
+                    "parameters": {
+                        "query": "Câu hỏi hoặc chủ đề bạn muốn phân tích sâu",
+                        "report_context": "Ngữ cảnh chương báo cáo hiện tại (tùy chọn, giúp tạo câu hỏi phụ chính xác hơn)"
+                    }
+                },
+                "panorama_search": {
+                    "name": "panorama_search",
+                    "description": TOOL_DESC_PANORAMA_SEARCH_VI,
+                    "parameters": {
+                        "query": "Truy vấn tìm kiếm, dùng để sắp xếp theo mức độ liên quan",
+                        "include_expired": "Có bao gồm nội dung hết hạn/lịch sử không (mặc định True)"
+                    }
+                },
+                "quick_search": {
+                    "name": "quick_search",
+                    "description": TOOL_DESC_QUICK_SEARCH_VI,
+                    "parameters": {
+                        "query": "Chuỗi truy vấn tìm kiếm",
+                        "limit": "Số lượng kết quả trả về (tùy chọn, mặc định 10)"
+                    }
+                },
+                "interview_agents": {
+                    "name": "interview_agents",
+                    "description": TOOL_DESC_INTERVIEW_AGENTS_VI,
+                    "parameters": {
+                        "interview_topic": "Chủ đề hoặc mô tả yêu cầu phỏng vấn (ví dụ: 'Tìm hiểu quan điểm của sinh viên về sự kiện')",
+                        "max_agents": "Số lượng Agent phỏng vấn tối đa (tùy chọn, mặc định 5, tối đa 10)"
+                    }
+                }
+            }
+        
         return {
             "insight_forge": {
                 "name": "insight_forge",
@@ -1126,12 +1240,19 @@ class ReportAgent:
     
     def _get_tools_description(self) -> str:
         """生成工具描述文本"""
-        desc_parts = ["可用工具："]
+        locale = get_locale()
+        if locale == 'vi':
+            desc_parts = ["Công cụ có sẵn:"]
+        else:
+            desc_parts = ["可用工具："]
         for name, tool in self.tools.items():
             params_desc = ", ".join([f"{k}: {v}" for k, v in tool["parameters"].items()])
             desc_parts.append(f"- {name}: {tool['description']}")
             if params_desc:
-                desc_parts.append(f"  参数: {params_desc}")
+                if locale == 'vi':
+                    desc_parts.append(f"  Tham số: {params_desc}")
+                else:
+                    desc_parts.append(f"  参数: {params_desc}")
         return "\n".join(desc_parts)
     
     def plan_outline(
@@ -1163,7 +1284,9 @@ class ReportAgent:
         if progress_callback:
             progress_callback("planning", 30, t('progress.generatingOutline'))
         
-        system_prompt = f"{PLAN_SYSTEM_PROMPT}\n\n{get_language_instruction()}"
+        # Add language instruction at the beginning for stronger effect
+        lang_instruction = get_language_instruction()
+        system_prompt = f"{lang_instruction}\n\n{PLAN_SYSTEM_PROMPT}\n\n{lang_instruction}"
         user_prompt = PLAN_USER_PROMPT_TEMPLATE.format(
             simulation_requirement=self.simulation_requirement,
             total_nodes=context.get('graph_statistics', {}).get('total_nodes', 0),
@@ -1194,7 +1317,7 @@ class ReportAgent:
                 ))
             
             outline = ReportOutline(
-                title=response.get("title", "模拟分析报告"),
+                title=response.get("title", t('report.defaultTitle', default="Báo cáo dự đoán tương lai")),
                 summary=response.get("summary", ""),
                 sections=sections
             )
@@ -1207,16 +1330,28 @@ class ReportAgent:
             
         except Exception as e:
             logger.error(t('report.outlinePlanFailed', error=str(e)))
-            # 返回默认大纲（3个章节，作为fallback）
-            return ReportOutline(
-                title="未来预测报告",
-                summary="基于模拟预测的未来趋势与风险分析",
-                sections=[
-                    ReportSection(title="预测场景与核心发现"),
-                    ReportSection(title="人群行为预测分析"),
-                    ReportSection(title="趋势展望与风险提示")
-                ]
-            )
+            # Return default outline (3 sections, as fallback)
+            locale = get_locale()
+            if locale == 'vi':
+                return ReportOutline(
+                    title="Báo cáo dự đoán tương lai",
+                    summary="Phân tích xu hướng và rủi ro dựa trên mô phỏng",
+                    sections=[
+                        ReportSection(title="Kịch bản dự đoán và phát hiện cốt lõi"),
+                        ReportSection(title="Phân tích hành vi nhóm người"),
+                        ReportSection(title="Xu hướng triển vọng và cảnh báo rủi ro")
+                    ]
+                )
+            else:
+                return ReportOutline(
+                    title="未来预测报告",
+                    summary="基于模拟预测的未来趋势与风险分析",
+                    sections=[
+                        ReportSection(title="预测场景与核心发现"),
+                        ReportSection(title="人群行为预测分析"),
+                        ReportSection(title="趋势展望与风险提示")
+                    ]
+                )
     
     def _generate_section_react(
         self, 
@@ -1259,7 +1394,9 @@ class ReportAgent:
             section_title=section.title,
             tools_description=self._get_tools_description(),
         )
-        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
+        # Add language instruction at the beginning for stronger effect
+        lang_instruction = get_language_instruction()
+        system_prompt = f"{lang_instruction}\n\n{system_prompt}\n\n{lang_instruction}"
 
         # 构建用户prompt - 每个已完成章节各传入最大4000字
         if previous_sections:
@@ -1270,7 +1407,8 @@ class ReportAgent:
                 previous_parts.append(truncated)
             previous_content = "\n\n---\n\n".join(previous_parts)
         else:
-            previous_content = "（这是第一个章节）"
+            locale = get_locale()
+            previous_content = "(Đây là chương đầu tiên)" if locale == 'vi' else "（这是第一个章节）"
         
         user_prompt = SECTION_USER_PROMPT_TEMPLATE.format(
             previous_content=previous_content,
@@ -1796,16 +1934,22 @@ class ReportAgent:
                 # 限制报告长度，避免上下文过长
                 report_content = report.markdown_content[:15000]
                 if len(report.markdown_content) > 15000:
-                    report_content += "\n\n... [报告内容已截断] ..."
+                    locale = get_locale()
+                    report_content += "\n\n... [Nội dung báo cáo đã được cắt ngắn] ..." if locale == 'vi' else "\n\n... [报告内容已截断] ..."
         except Exception as e:
             logger.warning(t('report.fetchReportFailed', error=e))
         
+        locale = get_locale()
+        no_report_msg = "(Chưa có báo cáo)" if locale == 'vi' else "（暂无报告）"
+        
         system_prompt = CHAT_SYSTEM_PROMPT_TEMPLATE.format(
             simulation_requirement=self.simulation_requirement,
-            report_content=report_content if report_content else "（暂无报告）",
+            report_content=report_content if report_content else no_report_msg,
             tools_description=self._get_tools_description(),
         )
-        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
+        # Add language instruction at the beginning for stronger effect
+        lang_instruction = get_language_instruction()
+        system_prompt = f"{lang_instruction}\n\n{system_prompt}\n\n{lang_instruction}"
 
         # 构建消息
         messages = [{"role": "system", "content": system_prompt}]

@@ -49,3 +49,21 @@ export const getReport = (reportId) => {
 export const chatWithReport = (data) => {
   return requestWithRetry(() => service.post('/api/report/chat', data), 3, 1000)
 }
+
+/**
+ * 重新生成报告
+ * @param {string} simulationId - 模拟ID
+ * @param {Object} data - { force_regenerate? }
+ */
+export const retryReportGeneration = (simulationId, data = { force_regenerate: true }) => {
+  return service.post(`/api/report/retry/${simulationId}`, data)
+}
+
+/**
+ * 重新生成报告的单个章节
+ * @param {string} reportId - 报告ID
+ * @param {number} sectionIndex - 章节索引（从1开始）
+ */
+export const retrySectionGeneration = (reportId, sectionIndex) => {
+  return service.post(`/api/report/retry/section/${reportId}/${sectionIndex}`)
+}
