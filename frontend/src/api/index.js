@@ -14,10 +14,11 @@ const service = axios.create({
 service.interceptors.request.use(
   config => {
     config.headers['Accept-Language'] = i18n.global.locale.value
+    console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`)
     return config
   },
   error => {
-    console.error('Request error:', error)
+    console.error('[API Request Error]', error)
     return Promise.reject(error)
   }
 )
@@ -26,26 +27,36 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   response => {
     const res = response.data
+    console.log(`[API Response] ${response.status} ${response.config.url}`)
     
     // 如果返回的状态码不是success，则抛出错误
     if (!res.success && res.success !== undefined) {
-      console.error('API Error:', res.error || res.message || 'Unknown error')
+      console.error('[API Error]', res.error || res.message || 'Unknown error')
       return Promise.reject(new Error(res.error || res.message || 'Error'))
     }
     
     return res
   },
   error => {
-    console.error('Response error:', error)
+    console.error('[API Response Error]', error.message)
     
     // 处理超时
     if (error.code === 'ECONNABORTED' && error.message.includes('timeout')) {
-      console.error('Request timeout')
+      console.error('[API Timeout] Request timeout - server may be processing')
     }
     
     // 处理网络错误
     if (error.message === 'Network Error') {
-      console.error('Network error - please check your connection')
+      console.error('[API Network Error] Possible causes:')
+      console.error('  1. Backend server not running')
+      console.error('  2. CORS issue')
+      console.error('  3. Network connectivity issue')
+      console.error('  4. Server crashed')
+    }
+    
+    // 处理连接拒绝
+    if (error.message?.includes('ECONNREFUSED')) {
+      console.error('[API Connection Refused] Backend server may not be running')
     }
     
     return Promise.reject(error)
@@ -53,17 +64,29 @@ service.interceptors.response.use(
 )
 
 // 带重试的请求函数
-export const requestWithRetry = async (requestFn, maxRetries = 3, delay = 1000) => {
+export const requestWithRetry = async (requestFn, maxRetries = 3, delay = 2000) => {
+  let lastError = null
+  
   for (let i = 0; i < maxRetries; i++) {
     try {
-      return await requestFn()
+      console.log(`[Retry] Attempt ${i + 1}/${maxRetries}`)
+      const result = await requestFn()
+      console.log(`[Retry] Success on attempt ${i + 1}`)
+      return result
     } catch (error) {
-      if (i === maxRetries - 1) throw error
+      lastError = error
+      console.warn(`[Retry] Attempt ${i + 1} failed: ${error.message}`)
       
-      console.warn(`Request failed, retrying (${i + 1}/${maxRetries})...`)
-      await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)))
+      if (i < maxRetries - 1) {
+        const waitTime = delay * Math.pow(2, i)
+        console.log(`[Retry] Waiting ${waitTime}ms before retry...`)
+        await new Promise(resolve => setTimeout(resolve, waitTime))
+      }
     }
   }
+  
+  console.error(`[Retry] All ${maxRetries} attempts failed`)
+  throw lastError
 }
 
 export default service

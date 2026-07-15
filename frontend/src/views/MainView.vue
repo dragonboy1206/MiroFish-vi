@@ -286,7 +286,12 @@ const handleNewProject = async () => {
     pending.files.forEach(f => formData.append('files', f))
     formData.append('simulation_requirement', pending.simulationRequirement)
     
+    console.log('[Upload] Starting file upload...')
+    console.log('[Upload] Files:', pending.files.map(f => f.name))
+    console.log('[Upload] Requirement:', pending.simulationRequirement?.substring(0, 100))
+    
     const res = await generateOntology(formData)
+    
     if (res.success) {
       clearPendingUpload()
       currentProjectId.value = res.data.project_id
@@ -301,7 +306,23 @@ const handleNewProject = async () => {
       addLog(`Error generating ontology: ${error.value}`)
     }
   } catch (err) {
-    error.value = err.message
+    console.error('[Upload] Error:', err)
+    
+    // Hiển thị lỗi chi tiết hơn
+    let errorMessage = err.message || 'Unknown error'
+    
+    if (err.message === 'Network Error') {
+      errorMessage = 'Lỗi kết nối mạng. Vui lòng kiểm tra:\n' +
+        '1. Backend server có đang chạy không?\n' +
+        '2. Có vấn đề về CORS không?\n' +
+        '3. Kết nối mạng có ổn định không?'
+    } else if (err.code === 'ECONNABORTED') {
+      errorMessage = 'Yêu cầu hết thời gian chờ. Server có thể đang xử lý quá lâu.'
+    } else if (err.message?.includes('ECONNREFUSED')) {
+      errorMessage = 'Không thể kết nối đến server. Backend có thể chưa khởi động.'
+    }
+    
+    error.value = errorMessage
     addLog(`Exception in handleNewProject: ${err.message}`)
   } finally {
     loading.value = false

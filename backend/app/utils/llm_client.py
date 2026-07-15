@@ -5,10 +5,13 @@ LLM客户端封装
 
 import json
 import re
+import logging
 from typing import Optional, Dict, Any, List
 from openai import OpenAI
 
 from ..config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class LLMClient:
@@ -26,6 +29,8 @@ class LLMClient:
         
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
+        
+        logger.info(f"LLM Client initialized: model={self.model}, base_url={self.base_url}")
         
         self.client = OpenAI(
             api_key=self.api_key,
@@ -61,11 +66,17 @@ class LLMClient:
         if response_format:
             kwargs["response_format"] = response_format
         
-        response = self.client.chat.completions.create(**kwargs)
-        content = response.choices[0].message.content
-        # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
-        content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
-        return content
+        try:
+            logger.debug(f"LLM request: model={self.model}, messages={len(messages)}")
+            response = self.client.chat.completions.create(**kwargs)
+            content = response.choices[0].message.content
+            logger.debug(f"LLM response: {len(content)} chars")
+            # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
+            content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+            return content
+        except Exception as e:
+            logger.error(f"LLM request failed: {type(e).__name__}: {str(e)}")
+            raise
     
     def chat_json(
         self,
