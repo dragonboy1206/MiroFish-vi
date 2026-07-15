@@ -5,9 +5,10 @@ LLM客户端封装
 
 import json
 import re
+import time
 import logging
 from typing import Optional, Dict, Any, List
-from openai import OpenAI
+from openai import OpenAI, APIConnectionError, APITimeoutError, RateLimitError
 
 from ..config import Config
 
@@ -34,7 +35,9 @@ class LLMClient:
         
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
+            timeout=120.0,  # 2分钟超时
+            max_retries=2   # 自动重试2次
         )
     
     def chat(
@@ -42,7 +45,8 @@ class LLMClient:
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        response_format: Optional[Dict] = None
+        response_format: Optional[Dict] = None,
+        max_retries: int = 3
     ) -> str:
         """
         发送聊天请求
@@ -52,6 +56,7 @@ class LLMClient:
             temperature: 温度参数
             max_tokens: 最大token数
             response_format: 响应格式（如JSON模式）
+            max_retries: 最大重试次数
             
         Returns:
             模型响应文本
@@ -66,17 +71,50 @@ class LLMClient:
         if response_format:
             kwargs["response_format"] = response_format
         
-        try:
-            logger.debug(f"LLM request: model={self.model}, messages={len(messages)}")
-            response = self.client.chat.completions.create(**kwargs)
-            content = response.choices[0].message.content
-            logger.debug(f"LLM response: {len(content)} chars")
-            # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
-            content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
-            return content
-        except Exception as e:
-            logger.error(f"LLM request failed: {type(e).__name__}: {str(e)}")
-            raise
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                logger.debug(f"LLM request attempt {attempt + 1}/{max_retries}: model={self.model}, messages={len(messages)}")
+                response = self.client.chat.completions.create(**kwargs)
+                content = response.choices[0].message.content
+                logger.debug(f"LLM response: {len(content)} chars")
+                # 部分模型（如MiniMax M2.5）会在content中包含<think>思考内容，需要移除
+                content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+                return content
+                
+            except APIConnectionError as e:
+                last_error = e
+                logger.warning(f"LLM connection error (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff
+                    logger.info(f"Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+                    
+            except APITimeoutError as e:
+                last_error = e
+                logger.warning(f"LLM timeout (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.info(f"Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+                    
+            except RateLimitError as e:
+                last_error = e
+                logger.warning(f"LLM rate limit (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                if attempt < max_retries - 1:
+                    wait_time = 5  # Wait longer for rate limits
+                    logger.info(f"Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+                    
+            except Exception as e:
+                last_error = e
+                logger.error(f"LLM request failed (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+        
+        logger.error(f"LLM request failed after {max_retries} attempts")
+        raise last_error
     
     def chat_json(
         self,
