@@ -50,9 +50,30 @@
 
       <!-- Right Panel: Step Components -->
       <div class="panel-wrapper right" :style="rightPanelStyle">
+        <!-- Error State with Retry -->
+        <div v-if="error && currentStep === 1" class="error-panel">
+          <div class="error-content">
+            <div class="error-icon">⚠️</div>
+            <h3 class="error-title">{{ $t('common.error') }}</h3>
+            <p class="error-message">{{ error }}</p>
+            <div class="error-actions">
+              <button class="retry-btn primary" @click="handleRetryUpload">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                {{ $t('common.retry') }}
+              </button>
+              <button class="back-btn" @click="router.push('/')">
+                {{ $t('common.back') }}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Step 1: 图谱构建 -->
         <Step1GraphBuild 
-          v-if="currentStep === 1"
+          v-else-if="currentStep === 1"
           :currentPhase="currentPhase"
           :projectData="projectData"
           :ontologyProgress="ontologyProgress"
@@ -228,6 +249,12 @@ const handleRetryGraph = async () => {
       startGraphPolling()
     }
   }
+}
+
+const handleRetryUpload = async () => {
+  addLog('Retrying upload and ontology generation...')
+  error.value = '' // Clear error
+  await handleNewProject()
 }
 
 // --- Data Logic ---
@@ -591,5 +618,94 @@ onUnmounted(() => {
 
 .panel-wrapper.left {
   border-right: 1px solid #EAEAEA;
+}
+
+/* Error Panel */
+.error-panel {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #FAFAFA;
+  padding: 24px;
+}
+
+.error-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.error-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.error-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #DC2626;
+  margin-bottom: 8px;
+}
+
+.error-message {
+  font-size: 14px;
+  color: #666;
+  line-height: 1.6;
+  margin-bottom: 24px;
+  padding: 12px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 6px;
+  text-align: left;
+  word-break: break-word;
+}
+
+.error-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: #FF5722;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.retry-btn:hover {
+  background: #E64A19;
+}
+
+.retry-btn.primary {
+  background: #FF5722;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: transparent;
+  color: #666;
+  border: 1px solid #DDD;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.back-btn:hover {
+  background: #F5F5F5;
+  border-color: #CCC;
 }
 </style>
